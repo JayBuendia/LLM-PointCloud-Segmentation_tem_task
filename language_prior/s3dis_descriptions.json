@@ -1,0 +1,67 @@
+{
+  "ceiling": [
+    "A flat overhead surface forming the top boundary of an indoor room.",
+    "A broad horizontal architectural plane above people and furniture, often white or light colored.",
+    "The upper interior surface that contains lights, vents, and structural panels."
+  ],
+  "floor": [
+    "A large walkable horizontal surface at the bottom of an indoor room.",
+    "The ground plane supporting furniture, people, and objects in an office or hallway.",
+    "A continuous interior surface made of carpet, tile, wood, or concrete."
+  ],
+  "wall": [
+    "A vertical planar structure enclosing rooms and corridors.",
+    "A tall interior boundary surface that may contain doors, windows, boards, or decorations.",
+    "The upright architectural surface separating spaces in a building."
+  ],
+  "beam": [
+    "A long structural support element attached to or crossing the ceiling.",
+    "A narrow horizontal load-bearing component, usually protruding from the ceiling or upper wall.",
+    "An architectural support bar with elongated geometry above the room."
+  ],
+  "column": [
+    "A vertical structural support pillar extending from floor to ceiling.",
+    "A narrow upright load-bearing element, often rectangular or cylindrical.",
+    "A free-standing vertical architectural support in an indoor scene."
+  ],
+  "window": [
+    "A glass opening in a wall that allows light and visibility between spaces.",
+    "A rectangular transparent or reflective wall region framed by architectural borders.",
+    "An indoor wall-mounted glass panel, often near the outside of a building."
+  ],
+  "door": [
+    "A movable panel used as an entrance or exit through a wall.",
+    "A vertical rectangular object with a frame and handle, connecting rooms or corridors.",
+    "An indoor passage panel, often wooden, metal, or glass, embedded in a wall."
+  ],
+  "table": [
+    "A piece of furniture with a flat top surface supported by legs or a base.",
+    "An object used for working, eating, or placing items, usually waist height.",
+    "A horizontal tabletop structure commonly found in offices, classrooms, and meeting rooms."
+  ],
+  "chair": [
+    "A movable seat for one person, usually with legs and a backrest.",
+    "A sitting furniture object near desks or tables, sometimes with armrests or wheels.",
+    "An indoor object designed for seating, with a seat surface and supporting frame."
+  ],
+  "sofa": [
+    "A large cushioned seat for multiple people, typically found in lounge or office areas.",
+    "A soft upholstered furniture object with a long seat and backrest.",
+    "A couch-like indoor object used for resting or informal seating."
+  ],
+  "bookcase": [
+    "A shelving furniture object used to store books, files, or display items.",
+    "A tall cabinet-like structure with multiple horizontal shelves.",
+    "An indoor storage unit placed near walls, often containing books or office supplies."
+  ],
+  "board": [
+    "A flat wall-mounted surface used for writing, presenting, or displaying information.",
+    "A rectangular whiteboard, blackboard, or notice board attached to a wall.",
+    "A planar presentation surface commonly found in classrooms, offices, or meeting rooms."
+  ],
+  "clutter": [
+    "Miscellaneous small objects that do not belong to the main semantic categories.",
+    "Unstructured indoor items such as boxes, bags, trash bins, cables, and scattered supplies.",
+    "Background objects and irregular scene elements outside the defined furniture or architecture classes."
+  ]
+}

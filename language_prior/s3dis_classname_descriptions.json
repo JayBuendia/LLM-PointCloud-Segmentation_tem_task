@@ -1,0 +1,15 @@
+{
+  "ceiling": ["a point cloud of a ceiling", "a 3D indoor ceiling", "ceiling"],
+  "floor": ["a point cloud of a floor", "a 3D indoor floor", "floor"],
+  "wall": ["a point cloud of a wall", "a 3D indoor wall", "wall"],
+  "beam": ["a point cloud of a beam", "a 3D indoor beam", "beam"],
+  "column": ["a point cloud of a column", "a 3D indoor column", "column"],
+  "window": ["a point cloud of a window", "a 3D indoor window", "window"],
+  "door": ["a point cloud of a door", "a 3D indoor door", "door"],
+  "table": ["a point cloud of a table", "a 3D indoor table", "table"],
+  "chair": ["a point cloud of a chair", "a 3D indoor chair", "chair"],
+  "sofa": ["a point cloud of a sofa", "a 3D indoor sofa", "sofa"],
+  "bookcase": ["a point cloud of a bookcase", "a 3D indoor bookcase", "bookcase"],
+  "board": ["a point cloud of a board", "a 3D indoor board", "board"],
+  "clutter": ["a point cloud of clutter", "miscellaneous indoor clutter", "clutter"]
+}

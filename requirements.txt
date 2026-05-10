@@ -1,0 +1,8 @@
+numpy
+torch
+tensorboard
+ftfy
+regex
+tqdm
+# For CLIP text prototype generation:
+# pip install git+https://github.com/openai/CLIP.git
