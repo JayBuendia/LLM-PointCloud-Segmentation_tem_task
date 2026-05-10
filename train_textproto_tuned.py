@@ -342,11 +342,11 @@ def run_epoch(model, loader, optimizer, device, args, train=True):
 def apply_partial_freeze(model, prefixes):
     if not prefixes:
         return 0, 0
-    utonia = getattr(model.segmentor.encoder, "encoder_model", None)
-    if utonia is None:
+    encoder = getattr(model.segmentor.encoder, "encoder_model", None)
+    if encoder is None:
         return 0, 0
     total = frozen = 0
-    for name, param in utonia.named_parameters():
+    for name, param in encoder.named_parameters():
         total += param.numel()
         if any(name.startswith(prefix) for prefix in prefixes):
             param.requires_grad = False
