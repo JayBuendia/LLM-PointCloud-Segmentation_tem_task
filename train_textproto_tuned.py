@@ -245,8 +245,34 @@ def compute_class_weights(train_set, num_classes, power=0.5, max_weight=5.0):
     return torch.from_numpy(weights.astype(np.float32)), counts
 
 
+def soft_dice_loss(logits, labels, args, eps=1e-6):
+    probs = torch.softmax(logits, dim=1)
+    valid = (labels >= 0) & (labels < args.num_classes)
+    if not torch.any(valid):
+        return logits.new_tensor(0.0)
+    probs = probs.permute(0, 2, 1).reshape(-1, args.num_classes)[valid.reshape(-1)]
+    target = labels.reshape(-1)[valid.reshape(-1)]
+    one_hot = F.one_hot(target, num_classes=args.num_classes).float()
+    intersection = (probs * one_hot).sum(dim=0)
+    cardinality = probs.sum(dim=0) + one_hot.sum(dim=0)
+    dice = (2.0 * intersection + eps) / (cardinality + eps)
+    if getattr(args, "class_weights", None) is not None:
+        weights = args.class_weights.to(dice.device)
+        return ((1.0 - dice) * weights).sum() / weights.sum().clamp_min(eps)
+    return (1.0 - dice).mean()
+
+
 def ce_loss(logits, labels, args):
-    return F.cross_entropy(logits, labels, weight=getattr(args, "class_weights", None))
+    ce = F.cross_entropy(logits, labels, weight=getattr(args, "class_weights", None), reduction="none")
+    gamma = float(getattr(args, "focal_gamma", 0.0))
+    if gamma > 0:
+        pt = torch.exp(-ce.detach())
+        ce = ((1.0 - pt) ** gamma) * ce
+    loss = ce.mean()
+    dice_weight = float(getattr(args, "dice_weight", 0.0))
+    if dice_weight > 0:
+        loss = loss + dice_weight * soft_dice_loss(logits, labels, args)
+    return loss
 
 
 def apply_eval_vote(points, vote_idx, vote_count):
@@ -447,6 +473,8 @@ def main():
     parser.add_argument("--class_balanced_loss", type=str2bool, default=False)
     parser.add_argument("--class_weight_power", type=float, default=0.5)
     parser.add_argument("--class_weight_max", type=float, default=5.0)
+    parser.add_argument("--focal_gamma", type=float, default=0.0)
+    parser.add_argument("--dice_weight", type=float, default=0.0)
     parser.add_argument("--val_vote", type=int, default=1)
     parser.add_argument("--backbone_lr", type=float, default=None)
     parser.add_argument("--adapter_lr", type=float, default=None)
@@ -511,6 +539,7 @@ def main():
     print("text_weight", args.text_weight, "text_prototypes", args.text_prototypes or None)
     print("learnable_text_gate", args.learnable_text_gate, "per_class_text_gate", args.per_class_text_gate, "text_gate_init", args.text_gate_init, "resume", args.resume_checkpoint or None)
     print("class_balanced_loss", args.class_balanced_loss, "class_weights", None if args.class_weights is None else [round(float(x), 4) for x in args.class_weights.detach().cpu().tolist()])
+    print("focal_gamma", args.focal_gamma, "dice_weight", args.dice_weight)
     print("val_vote", args.val_vote, "freeze_prefixes", freeze_prefixes, "frozen_backbone %.2fM/%.2fM" % (frozen_params / 1e6, backbone_total_params / 1e6))
     print("optimizer_groups", [(g.get("name"), g["lr"], sum(p.numel() for p in g["params"]) / 1e6) for g in optim_groups])
     print("params total %.2fM trainable %.2fM" % (total_params / 1e6, trainable_params / 1e6))
