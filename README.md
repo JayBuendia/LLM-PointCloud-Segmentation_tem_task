@@ -40,7 +40,7 @@ bash scripts/train_textproto_llm_warm_gate.sh
 
 ## Acknowledgements
 
-This project builds on the open-source 3D vision ecosystem. We thank the Pointcept repository maintainers for releasing high-quality point cloud learning infrastructure. We also thank Prof. Zhaochong An, the author of COSeg, for open-sourcing code that is valuable for few-shot 3D point cloud segmentation research.
+This project benefits from the open-source 3D vision community. We sincerely thank [Zhaochong An](https://github.com/ZhaochongAn) for releasing COSeg and related few-shot point cloud segmentation resources, which provide valuable references for our reproduction and extension work. We also thank the [Pointcept](https://github.com/Pointcept/Pointcept) team for open-sourcing a high-quality point cloud learning codebase and infrastructure that have greatly supported research in 3D scene understanding.
 
 ## Git Hygiene
 
