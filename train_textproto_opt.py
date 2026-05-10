@@ -129,17 +129,17 @@ class TextPrototypeHead(nn.Module):
         return logits.transpose(1, 2).contiguous()
 
 
-class UtoniaSeg(nn.Module):
+class PretrainedSeg(nn.Module):
     def __init__(self, args, num_classes):
         super().__init__()
         dpa_root = args.dpa_root
         if dpa_root not in sys.path:
             sys.path.insert(0, dpa_root)
-        from models.utonia_backbone import UtoniaBackbone
+        from models.pretrained_backbone import PretrainedBackbone
 
-        self.freeze_utonia_encoder = bool(args.utonia_freeze_encoder)
-        self.encoder = UtoniaBackbone(args)
-        self.feat_dim = int(args.utonia_feat_dim) + sum(int(w[-1]) for w in args.edgeconv_widths)
+        self.freeze_backbone_encoder = bool(args.backbone_freeze_encoder)
+        self.encoder = PretrainedBackbone(args)
+        self.feat_dim = int(args.backbone_feat_dim) + sum(int(w[-1]) for w in args.edgeconv_widths)
         self.classifier = nn.Sequential(
             nn.Conv1d(self.feat_dim, 256, 1, bias=False),
             nn.BatchNorm1d(256),
@@ -153,8 +153,8 @@ class UtoniaSeg(nn.Module):
 
     def train(self, mode=True):
         super().train(mode)
-        if self.freeze_utonia_encoder and hasattr(self.encoder, "utonia_model"):
-            self.encoder.utonia_model.eval()
+        if self.freeze_backbone_encoder and hasattr(self.encoder, "encoder_model"):
+            self.encoder.encoder_model.eval()
         return self
 
     def forward(self, pc, return_features=False):
@@ -169,7 +169,7 @@ class UtoniaSeg(nn.Module):
 class TextProtoSeg(nn.Module):
     def __init__(self, args, num_classes, text_prototypes=None):
         super().__init__()
-        self.segmentor = UtoniaSeg(args, num_classes)
+        self.segmentor = PretrainedSeg(args, num_classes)
         self.text_weight = float(args.text_weight)
         self.learnable_text_gate = bool(getattr(args, "learnable_text_gate", False))
         self.text_head = None
@@ -306,7 +306,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--data_root", default="/root/autodl-tmp/Datasets/S3DIS/blocks_bs1_s1")
     parser.add_argument("--dpa_root", default="/root/autodl-tmp/workspace/ptv3_fs/DPA")
-    parser.add_argument("--save_dir", default="/root/autodl-tmp/workspace/llm_pointseg/outputs/utonia_textproto")
+    parser.add_argument("--save_dir", default="/root/autodl-tmp/workspace/llm_pointseg/outputs/textproto")
     parser.add_argument("--test_area", default="Area_5")
     parser.add_argument("--num_classes", type=int, default=13)
     parser.add_argument("--num_points", type=int, default=2048)
@@ -336,13 +336,15 @@ def main():
     parser.add_argument("--limit_val_batches", type=int, default=0)
     parser.add_argument("--edgeconv_widths", default="[[64,64], [64,64], [64,64]]")
     parser.add_argument("--pc_in_dim", type=int, default=9)
-    parser.add_argument("--utonia_repo_path", default="/root/autodl-tmp/workspace/ptv3_fs/COSeg/model")
-    parser.add_argument("--utonia_checkpoint_path", default="/root/autodl-tmp/workspace/ptv3_fs/COSeg/checkpoints/utonia/utonia.pth")
-    parser.add_argument("--utonia_backbone_dim", type=int, default=576)
-    parser.add_argument("--utonia_feat_dim", type=int, default=256)
-    parser.add_argument("--utonia_grid_size", type=float, default=0.01)
-    parser.add_argument("--utonia_freeze_encoder", type=str2bool, default=True)
-    parser.add_argument("--utonia_enable_flash", type=str2bool, default=False)
+    parser.add_argument("--backbone_repo_path", default="/root/autodl-tmp/workspace/ptv3_fs/COSeg/model")
+    parser.add_argument("--backbone_loader_module", default="model")
+    parser.add_argument("--backbone_loader_attr", default="load")
+    parser.add_argument("--backbone_checkpoint_path", default="/root/autodl-tmp/workspace/ptv3_fs/COSeg/checkpoints/pretrained_encoder.pth")
+    parser.add_argument("--backbone_dim", type=int, default=576)
+    parser.add_argument("--backbone_feat_dim", type=int, default=256)
+    parser.add_argument("--backbone_grid_size", type=float, default=0.01)
+    parser.add_argument("--backbone_freeze_encoder", type=str2bool, default=True)
+    parser.add_argument("--backbone_enable_flash", type=str2bool, default=False)
     args = parser.parse_args()
 
     args.edgeconv_widths = ast.literal_eval(args.edgeconv_widths)
@@ -396,7 +398,7 @@ def main():
             writer.add_scalar("miou/val", val_miou, epoch)
             writer.add_scalar("oa/train", train_oa, epoch)
             writer.add_scalar("oa/val", val_oa, epoch)
-        # Best-only checkpointing: full Utonia fine-tune checkpoints are large.
+        # Best-only checkpointing: full pretrained-backbone fine-tune checkpoints are large.
         # Do not write last.pth every epoch; keep best.pth for recovery/export.
         if val_miou > best_miou:
             best_miou = val_miou

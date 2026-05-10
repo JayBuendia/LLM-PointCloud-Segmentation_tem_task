@@ -1,8 +1,8 @@
-# LLM/Text Prototype + Utonia Point Cloud Segmentation
+# LLM/Text Prototype Point Cloud Segmentation
 
 This is a project for reproducing and extending recent LLM-guided point cloud segmentation ideas, including ICLR 2025-style multimodal/few-shot motivation and class-level language priors.
 
-This server workspace is the active project for exploring LLM-guided point cloud segmentation. It reuses the DPA/S3DIS data convention and wraps a Utonia encoder with a semantic segmentation head plus optional CLIP text-prototype guidance.
+This server workspace is the active project for exploring LLM-guided point cloud segmentation. It reuses the DPA/S3DIS data convention and wraps a pretrained 3D backbone with a semantic segmentation head plus optional CLIP text-prototype guidance.
 
 ## Why This Project Exists
 
@@ -10,10 +10,10 @@ The research question is whether language priors from LLM-generated class descri
 
 ## Main Files
 
-- `train_utonia_textproto.py`: initial Utonia + text prototype training entry.
-- `train_utonia_textproto_opt.py`: optimized training variant used in later runs.
-- `train_utonia_textproto_tuned.py`: tuned variant with class-balanced loss, per-class gates, partial freezing, and optimizer groups.
-- `models/utonia_backbone.py`: adapter that exposes Utonia features to the segmentation head.
+- `train_textproto.py`: initial pretrained-backbone + text prototype training entry.
+- `train_textproto_opt.py`: optimized training variant used in later runs.
+- `train_textproto_tuned.py`: tuned variant with class-balanced loss, per-class gates, partial freezing, and optimizer groups.
+- `models/pretrained_backbone.py`: adapter that exposes pretrained 3D backbone features to the segmentation head.
 - `language_prior/build_text_prototypes.py`: builds CLIP text prototypes from S3DIS class descriptions.
 - `language_prior/s3dis_descriptions.json`: LLM-generated class descriptions.
 - `scripts/`: launch scripts for smoke tests, prototype generation, and training variants.
@@ -37,6 +37,10 @@ bash scripts/train_baseline.sh
 bash scripts/train_textproto.sh
 bash scripts/train_textproto_llm_warm_gate.sh
 ```
+
+## Acknowledgements
+
+This project builds on the open-source 3D vision ecosystem. We thank the Pointcept repository maintainers for releasing high-quality point cloud learning infrastructure. We also thank Prof. Zhaochong An, the author of COSeg, for open-sourcing code that is valuable for few-shot 3D point cloud segmentation research.
 
 ## Git Hygiene
 

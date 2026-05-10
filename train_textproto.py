@@ -129,17 +129,17 @@ class TextPrototypeHead(nn.Module):
         return logits.transpose(1, 2).contiguous()
 
 
-class UtoniaSeg(nn.Module):
+class PretrainedSeg(nn.Module):
     def __init__(self, args, num_classes):
         super().__init__()
         dpa_root = args.dpa_root
         if dpa_root not in sys.path:
             sys.path.insert(0, dpa_root)
-        from models.utonia_backbone import UtoniaBackbone
+        from models.pretrained_backbone import PretrainedBackbone
 
-        self.freeze_utonia_encoder = bool(args.utonia_freeze_encoder)
-        self.encoder = UtoniaBackbone(args)
-        self.feat_dim = int(args.utonia_feat_dim) + sum(int(w[-1]) for w in args.edgeconv_widths)
+        self.freeze_backbone_encoder = bool(args.backbone_freeze_encoder)
+        self.encoder = PretrainedBackbone(args)
+        self.feat_dim = int(args.backbone_feat_dim) + sum(int(w[-1]) for w in args.edgeconv_widths)
         self.classifier = nn.Sequential(
             nn.Conv1d(self.feat_dim, 256, 1, bias=False),
             nn.BatchNorm1d(256),
@@ -153,8 +153,8 @@ class UtoniaSeg(nn.Module):
 
     def train(self, mode=True):
         super().train(mode)
-        if self.freeze_utonia_encoder and hasattr(self.encoder, "utonia_model"):
-            self.encoder.utonia_model.eval()
+        if self.freeze_backbone_encoder and hasattr(self.encoder, "encoder_model"):
+            self.encoder.encoder_model.eval()
         return self
 
     def forward(self, pc, return_features=False):
@@ -169,33 +169,21 @@ class UtoniaSeg(nn.Module):
 class TextProtoSeg(nn.Module):
     def __init__(self, args, num_classes, text_prototypes=None):
         super().__init__()
-        self.segmentor = UtoniaSeg(args, num_classes)
+        self.segmentor = PretrainedSeg(args, num_classes)
         self.text_weight = float(args.text_weight)
-        self.learnable_text_gate = bool(getattr(args, "learnable_text_gate", False))
         self.text_head = None
-        self.text_gate = None
         if text_prototypes is not None:
             self.register_buffer("text_prototypes", text_prototypes.float())
             self.text_head = TextPrototypeHead(self.segmentor.feat_dim, text_prototypes.shape[1], args.text_logit_scale)
-            if self.learnable_text_gate:
-                init = float(getattr(args, "text_gate_init", 0.02))
-                init = min(max(init, 1e-4), 1.0 - 1e-4)
-                if bool(getattr(args, "per_class_text_gate", False)):
-                    self.text_gate = nn.Parameter(torch.full((num_classes,), torch.logit(torch.tensor(init)).item()))
-                else:
-                    self.text_gate = nn.Parameter(torch.logit(torch.tensor(init)))
         else:
             self.text_prototypes = None
 
     def forward(self, pc):
         z_vis, feat = self.segmentor(pc, return_features=True)
         z_text = None
-        if self.text_head is not None and (self.text_weight > 0 or self.learnable_text_gate):
+        if self.text_head is not None and self.text_weight > 0:
             z_text = self.text_head(feat, self.text_prototypes)
-            gate = torch.sigmoid(self.text_gate) if self.learnable_text_gate else self.text_weight
-            if torch.is_tensor(gate) and gate.ndim == 1:
-                gate = gate.view(1, -1, 1)
-            return z_vis + gate * z_text, z_vis, z_text
+            return z_vis + self.text_weight * z_text, z_vis, z_text
         return z_vis, z_vis, z_text
 
 
@@ -230,44 +218,6 @@ def compute_metrics(confusion):
     oa = tp.sum() / max(confusion.sum(), 1.0)
     miou = float(np.mean(iou))
     return float(oa), miou, iou.tolist()
-
-
-def compute_class_weights(train_set, num_classes, power=0.5, max_weight=5.0):
-    counts = np.zeros(num_classes, dtype=np.float64)
-    for path in train_set.files:
-        labels = np.load(path, mmap_mode="r")[:, 6].astype(np.int64)
-        counts += np.bincount(labels[(labels >= 0) & (labels < num_classes)], minlength=num_classes)
-    freq = counts / max(counts.sum(), 1.0)
-    weights = np.power(np.maximum(freq, 1e-12), -float(power))
-    weights = weights / np.mean(weights)
-    weights = np.minimum(weights, float(max_weight))
-    weights = weights / np.mean(weights)
-    return torch.from_numpy(weights.astype(np.float32)), counts
-
-
-def ce_loss(logits, labels, args):
-    return F.cross_entropy(logits, labels, weight=getattr(args, "class_weights", None))
-
-
-def apply_eval_vote(points, vote_idx, vote_count):
-    if vote_idx == 0:
-        return points
-    out = points.clone()
-    angle = 2.0 * math.pi * float(vote_idx) / float(max(vote_count, 1))
-    c, s = math.cos(angle), math.sin(angle)
-    xyz = out[:, 0:3, :]
-    x = xyz[:, 0, :].clone()
-    y = xyz[:, 1, :].clone()
-    xyz[:, 0, :] = c * x - s * y
-    xyz[:, 1, :] = s * x + c * y
-    # Rotate normalized XYZ around room-center only for the horizontal plane.
-    if out.shape[1] >= 9:
-        XYZ = out[:, 6:9, :]
-        X = (XYZ[:, 0, :] - 0.5).clone()
-        Y = (XYZ[:, 1, :] - 0.5).clone()
-        XYZ[:, 0, :] = c * X - s * Y + 0.5
-        XYZ[:, 1, :] = s * X + c * Y + 0.5
-    return out
 
 
 def load_text_prototypes(path, device, expected_classes=13):
@@ -313,21 +263,12 @@ def run_epoch(model, loader, optimizer, device, args, train=True):
                 break
             points = points.to(device, non_blocking=True)
             labels = labels.to(device, non_blocking=True)
-            if train or args.val_vote <= 1:
-                logits, z_vis, z_text = model(points)
-            else:
-                logits_acc = None
-                z_vis = z_text = None
-                for vote_idx in range(args.val_vote):
-                    vote_points = apply_eval_vote(points, vote_idx, args.val_vote)
-                    vote_logits, _, _ = model(vote_points)
-                    logits_acc = vote_logits if logits_acc is None else logits_acc + vote_logits
-                logits = logits_acc / float(args.val_vote)
-            loss = ce_loss(logits, labels, args)
+            logits, z_vis, z_text = model(points)
+            loss = F.cross_entropy(logits, labels)
             if train and args.visual_aux_weight > 0:
-                loss = loss + args.visual_aux_weight * ce_loss(z_vis, labels, args)
+                loss = loss + args.visual_aux_weight * F.cross_entropy(z_vis, labels)
             if train and args.text_aux_weight > 0 and z_text is not None:
-                loss = loss + args.text_aux_weight * ce_loss(z_text, labels, args)
+                loss = loss + args.text_aux_weight * F.cross_entropy(z_text, labels)
             if train:
                 optimizer.zero_grad(set_to_none=True)
                 loss.backward()
@@ -339,55 +280,6 @@ def run_epoch(model, loader, optimizer, device, args, train=True):
     return meter.avg, oa, miou, iou
 
 
-def apply_partial_freeze(model, prefixes):
-    if not prefixes:
-        return 0, 0
-    utonia = getattr(model.segmentor.encoder, "utonia_model", None)
-    if utonia is None:
-        return 0, 0
-    total = frozen = 0
-    for name, param in utonia.named_parameters():
-        total += param.numel()
-        if any(name.startswith(prefix) for prefix in prefixes):
-            param.requires_grad = False
-            frozen += param.numel()
-    return frozen, total
-
-
-def build_optimizer(model, args):
-    backbone_params, adapter_params, head_params = [], [], []
-    for name, param in model.named_parameters():
-        if not param.requires_grad:
-            continue
-        if name.startswith("segmentor.encoder.utonia_model"):
-            backbone_params.append(param)
-        elif name.startswith("segmentor.encoder.point_mapper") or name.startswith("segmentor.encoder.edge_mappers"):
-            adapter_params.append(param)
-        else:
-            head_params.append(param)
-    groups = []
-    if backbone_params:
-        groups.append({"params": backbone_params, "lr": args.backbone_lr, "name": "utonia_backbone"})
-    if adapter_params:
-        groups.append({"params": adapter_params, "lr": args.adapter_lr, "name": "adapter"})
-    if head_params:
-        groups.append({"params": head_params, "lr": args.head_lr, "name": "heads"})
-    return torch.optim.AdamW(groups, lr=args.lr, weight_decay=args.weight_decay), groups
-
-
-def load_compatible_state_dict(model, state):
-    current = model.state_dict()
-    compatible = {}
-    skipped = []
-    for key, value in state.items():
-        if key in current and tuple(value.shape) == tuple(current[key].shape):
-            compatible[key] = value
-        else:
-            skipped.append(key)
-    missing, unexpected = model.load_state_dict(compatible, strict=False)
-    return missing, unexpected, skipped
-
-
 def save_checkpoint(path, model, optimizer, epoch, best_miou, args):
     os.makedirs(os.path.dirname(path), exist_ok=True)
     torch.save(
@@ -396,7 +288,7 @@ def save_checkpoint(path, model, optimizer, epoch, best_miou, args):
             "optimizer": optimizer.state_dict(),
             "epoch": epoch,
             "best_miou": best_miou,
-            "args": {k: v for k, v in vars(args).items() if k != "class_weights"},
+            "args": vars(args),
             "classes": S3DIS_ORDER,
         },
         path,
@@ -407,7 +299,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--data_root", default="/root/autodl-tmp/Datasets/S3DIS/blocks_bs1_s1")
     parser.add_argument("--dpa_root", default="/root/autodl-tmp/workspace/ptv3_fs/DPA")
-    parser.add_argument("--save_dir", default="/root/autodl-tmp/workspace/llm_pointseg/outputs/utonia_textproto")
+    parser.add_argument("--save_dir", default="/root/autodl-tmp/workspace/llm_pointseg/outputs/textproto")
     parser.add_argument("--test_area", default="Area_5")
     parser.add_argument("--num_classes", type=int, default=13)
     parser.add_argument("--num_points", type=int, default=2048)
@@ -428,31 +320,21 @@ def main():
     parser.add_argument("--text_prototypes", default="")
     parser.add_argument("--text_weight", type=float, default=0.0)
     parser.add_argument("--text_logit_scale", type=float, default=10.0)
-    parser.add_argument("--learnable_text_gate", type=str2bool, default=False)
-    parser.add_argument("--per_class_text_gate", type=str2bool, default=False)
-    parser.add_argument("--text_gate_init", type=float, default=0.02)
-    parser.add_argument("--resume_checkpoint", default="")
     parser.add_argument("--visual_aux_weight", type=float, default=0.0)
     parser.add_argument("--text_aux_weight", type=float, default=0.0)
-    parser.add_argument("--class_balanced_loss", type=str2bool, default=False)
-    parser.add_argument("--class_weight_power", type=float, default=0.5)
-    parser.add_argument("--class_weight_max", type=float, default=5.0)
-    parser.add_argument("--val_vote", type=int, default=1)
-    parser.add_argument("--backbone_lr", type=float, default=None)
-    parser.add_argument("--adapter_lr", type=float, default=None)
-    parser.add_argument("--head_lr", type=float, default=None)
-    parser.add_argument("--freeze_utonia_prefixes", default="")
     parser.add_argument("--limit_train_batches", type=int, default=0)
     parser.add_argument("--limit_val_batches", type=int, default=0)
     parser.add_argument("--edgeconv_widths", default="[[64,64], [64,64], [64,64]]")
     parser.add_argument("--pc_in_dim", type=int, default=9)
-    parser.add_argument("--utonia_repo_path", default="/root/autodl-tmp/workspace/ptv3_fs/COSeg/model")
-    parser.add_argument("--utonia_checkpoint_path", default="/root/autodl-tmp/workspace/ptv3_fs/COSeg/checkpoints/utonia/utonia.pth")
-    parser.add_argument("--utonia_backbone_dim", type=int, default=576)
-    parser.add_argument("--utonia_feat_dim", type=int, default=256)
-    parser.add_argument("--utonia_grid_size", type=float, default=0.01)
-    parser.add_argument("--utonia_freeze_encoder", type=str2bool, default=True)
-    parser.add_argument("--utonia_enable_flash", type=str2bool, default=False)
+    parser.add_argument("--backbone_repo_path", default="/root/autodl-tmp/workspace/ptv3_fs/COSeg/model")
+    parser.add_argument("--backbone_loader_module", default="model")
+    parser.add_argument("--backbone_loader_attr", default="load")
+    parser.add_argument("--backbone_checkpoint_path", default="/root/autodl-tmp/workspace/ptv3_fs/COSeg/checkpoints/pretrained_encoder.pth")
+    parser.add_argument("--backbone_dim", type=int, default=576)
+    parser.add_argument("--backbone_feat_dim", type=int, default=256)
+    parser.add_argument("--backbone_grid_size", type=float, default=0.01)
+    parser.add_argument("--backbone_freeze_encoder", type=str2bool, default=True)
+    parser.add_argument("--backbone_enable_flash", type=str2bool, default=False)
     args = parser.parse_args()
 
     args.edgeconv_widths = ast.literal_eval(args.edgeconv_widths)
@@ -462,31 +344,12 @@ def main():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     train_set, val_set, train_loader, val_loader = make_loaders(args)
-    if args.class_balanced_loss:
-        class_weights, class_counts = compute_class_weights(train_set, args.num_classes, args.class_weight_power, args.class_weight_max)
-        args.class_weights = class_weights.to(device)
-    else:
-        class_counts = None
-        args.class_weights = None
     text_prototypes = load_text_prototypes(args.text_prototypes, device, args.num_classes)
     if args.text_weight > 0 and text_prototypes is None:
         raise ValueError("--text_weight > 0 requires --text_prototypes")
 
     model = TextProtoSeg(args, args.num_classes, text_prototypes).to(device)
-    if args.resume_checkpoint:
-        ckpt = torch.load(args.resume_checkpoint, map_location="cpu")
-        state = ckpt["model"] if isinstance(ckpt, dict) and "model" in ckpt else ckpt
-        missing, unexpected, skipped = load_compatible_state_dict(model, state)
-        print("loaded resume_checkpoint", args.resume_checkpoint)
-        print("missing keys", missing)
-        print("unexpected keys", unexpected)
-        print("skipped incompatible keys", skipped)
-    freeze_prefixes = [x.strip() for x in args.freeze_utonia_prefixes.split(",") if x.strip()]
-    frozen_params, utonia_params = apply_partial_freeze(model, freeze_prefixes)
-    args.backbone_lr = args.lr if args.backbone_lr is None else args.backbone_lr
-    args.adapter_lr = args.lr if args.adapter_lr is None else args.adapter_lr
-    args.head_lr = args.lr if args.head_lr is None else args.head_lr
-    optimizer, optim_groups = build_optimizer(model, args)
+    optimizer = torch.optim.AdamW([p for p in model.parameters() if p.requires_grad], lr=args.lr, weight_decay=args.weight_decay)
     scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=args.step_size, gamma=args.gamma)
     writer = SummaryWriter(args.save_dir) if SummaryWriter is not None else None
 
@@ -495,10 +358,6 @@ def main():
     total_params = sum(p.numel() for p in model.parameters())
     trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
     print("text_weight", args.text_weight, "text_prototypes", args.text_prototypes or None)
-    print("learnable_text_gate", args.learnable_text_gate, "per_class_text_gate", args.per_class_text_gate, "text_gate_init", args.text_gate_init, "resume", args.resume_checkpoint or None)
-    print("class_balanced_loss", args.class_balanced_loss, "class_weights", None if args.class_weights is None else [round(float(x), 4) for x in args.class_weights.detach().cpu().tolist()])
-    print("val_vote", args.val_vote, "freeze_prefixes", freeze_prefixes, "frozen_utonia %.2fM/%.2fM" % (frozen_params / 1e6, utonia_params / 1e6))
-    print("optimizer_groups", [(g.get("name"), g["lr"], sum(p.numel() for p in g["params"]) / 1e6) for g in optim_groups])
     print("params total %.2fM trainable %.2fM" % (total_params / 1e6, trainable_params / 1e6))
 
     best_miou = -1.0
@@ -521,8 +380,7 @@ def main():
             writer.add_scalar("miou/val", val_miou, epoch)
             writer.add_scalar("oa/train", train_oa, epoch)
             writer.add_scalar("oa/val", val_oa, epoch)
-        # Best-only checkpointing: full Utonia fine-tune checkpoints are large.
-        # Do not write last.pth every epoch; keep best.pth for recovery/export.
+        save_checkpoint(os.path.join(args.save_dir, "last.pth"), model, optimizer, epoch, best_miou, args)
         if val_miou > best_miou:
             best_miou = val_miou
             save_checkpoint(os.path.join(args.save_dir, "best.pth"), model, optimizer, epoch, best_miou, args)

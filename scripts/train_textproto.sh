@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 cd /root/autodl-tmp/workspace/llm_pointseg
-CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-0} /root/miniconda3/bin/python train_utonia_textproto.py \
-  --save_dir /root/autodl-tmp/workspace/llm_pointseg/outputs/utonia_textproto_area5_tw01 \
+CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-0} /root/miniconda3/bin/python train_textproto.py \
+  --save_dir /root/autodl-tmp/workspace/llm_pointseg/outputs/textproto_area5_tw01 \
   --epochs 60 \
   --batch_size 8 \
   --num_workers 8 \
@@ -10,4 +10,4 @@ CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-0} /root/miniconda3/bin/python trai
   --text_weight 0.1 \
   --visual_aux_weight 0.0 \
   --text_aux_weight 0.0 \
-  --utonia_enable_flash true
+  --backbone_enable_flash true
