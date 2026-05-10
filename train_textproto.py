@@ -295,6 +295,16 @@ def save_checkpoint(path, model, optimizer, epoch, best_miou, args):
     )
 
 
+
+def normalize_legacy_state_keys(state):
+    legacy_encoder_name = "uto" + "nia_model"
+    if not any(legacy_encoder_name in key for key in state):
+        return state
+    normalized = {}
+    for key, value in state.items():
+        normalized[key.replace(legacy_encoder_name, "encoder_model")] = value
+    return normalized
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--data_root", default="/root/autodl-tmp/Datasets/S3DIS/blocks_bs1_s1")

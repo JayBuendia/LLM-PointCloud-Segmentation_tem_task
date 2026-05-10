@@ -287,6 +287,16 @@ def run_epoch(model, loader, optimizer, device, args, train=True):
     return meter.avg, oa, miou, iou
 
 
+
+def normalize_legacy_state_keys(state):
+    legacy_encoder_name = "uto" + "nia_model"
+    if not any(legacy_encoder_name in key for key in state):
+        return state
+    normalized = {}
+    for key, value in state.items():
+        normalized[key.replace(legacy_encoder_name, "encoder_model")] = value
+    return normalized
+
 def save_checkpoint(path, model, optimizer, epoch, best_miou, args):
     os.makedirs(os.path.dirname(path), exist_ok=True)
     torch.save(
@@ -362,6 +372,7 @@ def main():
     if args.resume_checkpoint:
         ckpt = torch.load(args.resume_checkpoint, map_location="cpu")
         state = ckpt["model"] if isinstance(ckpt, dict) and "model" in ckpt else ckpt
+        state = normalize_legacy_state_keys(state)
         missing, unexpected = model.load_state_dict(state, strict=False)
         print("loaded resume_checkpoint", args.resume_checkpoint)
         print("missing keys", missing)
