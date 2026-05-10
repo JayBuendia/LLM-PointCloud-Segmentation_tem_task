@@ -454,6 +454,7 @@ def main():
     parser.add_argument("--freeze_backbone_prefixes", default="")
     parser.add_argument("--limit_train_batches", type=int, default=0)
     parser.add_argument("--limit_val_batches", type=int, default=0)
+    parser.add_argument("--eval_only", type=str2bool, default=False)
     parser.add_argument("--edgeconv_widths", default="[[64,64], [64,64], [64,64]]")
     parser.add_argument("--pc_in_dim", type=int, default=9)
     parser.add_argument("--backbone_repo_path", default="/root/autodl-tmp/workspace/ptv3_fs/COSeg/model")
@@ -513,6 +514,20 @@ def main():
     print("val_vote", args.val_vote, "freeze_prefixes", freeze_prefixes, "frozen_backbone %.2fM/%.2fM" % (frozen_params / 1e6, backbone_total_params / 1e6))
     print("optimizer_groups", [(g.get("name"), g["lr"], sum(p.numel() for p in g["params"]) / 1e6) for g in optim_groups])
     print("params total %.2fM trainable %.2fM" % (total_params / 1e6, trainable_params / 1e6))
+
+    if args.eval_only:
+        t0 = time.time()
+        val_loss, val_oa, val_miou, val_iou = run_epoch(model, val_loader, optimizer, device, args, train=False)
+        elapsed = time.time() - t0
+        print(
+            "eval_only val_loss %.4f val_oa %.4f val_miou %.4f time %.1fs"
+            % (val_loss, val_oa, val_miou, elapsed),
+            flush=True,
+        )
+        print("val_iou", " ".join("%s:%.4f" % (name, iou) for name, iou in zip(S3DIS_ORDER, val_iou)), flush=True)
+        if writer is not None:
+            writer.close()
+        return
 
     best_miou = -1.0
     for epoch in range(1, args.epochs + 1):
